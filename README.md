@@ -33,6 +33,31 @@ Mientras esas dos variables estén vacías la página funciona en **modo demo** 
 - Toda escritura pasa por funciones RPC `security definer` que verifican el PIN (bcrypt) de la alcancía.
 - El `pin_hash` nunca se expone: el `grant select` es por columnas.
 
+## Discord (avisos automáticos)
+
+Todo corre dentro de Supabase con `pg_net` + `pg_cron`; no hay bots ni servidores.
+
+1. Crea un webhook en el canal de Discord (Editar canal → Integraciones → Webhooks).
+2. Ejecuta `supabase/discord.sql` en el SQL Editor.
+3. Guarda la URL del webhook:
+
+```sql
+insert into private.config (clave, valor) values ('discord_webhook', 'https://discord.com/api/webhooks/...')
+on conflict (clave) do update set valor = excluded.valor;
+```
+
+Qué publica:
+
+- **Al instante**: cada aporte ("🐊 El Pato metió $50.000 · va en 47%") y cada alcancía nueva. Si alguien llega al 100%, mensaje especial.
+- **Viernes 6 pm** (Colombia): recordatorio con quienes no han aportado en la semana.
+- **Domingo 7 pm**: ranking semanal con totales del grupo.
+
+Prueba manual: `select public.enviar_recordatorio_discord();`
+
+## PWA
+
+La página es instalable (manifest + service worker). En Android/Chrome aparece el botón **Instalar**; en iPhone: Compartir → Añadir a pantalla de inicio.
+
 ## Desarrollo local
 
 ```bash
