@@ -8,8 +8,8 @@
 // todo se guarda solo en el navegador de cada persona.
 
 window.ALCANCIA_CONFIG = {
-  SUPABASE_URL: '',
-  SUPABASE_ANON_KEY: '',
+  SUPABASE_URL: 'https://rrxdbxobogowrgoolewm.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_UmHe89LU4xD-d2HVuDe68g_TvwCpn0W',
 
   // Precio del juego en pesos colombianos (meta fija para todo el grupo)
   META_COP: 430000,
