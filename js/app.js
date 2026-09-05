@@ -15,6 +15,13 @@
     { k: 'av5', n: 'Vice Beach', e: '🍹' }, { k: 'av8', n: 'Cadenas de oro', e: '⛓️' }, { k: 'av6', n: 'El deportivo', e: '🚗' },
     { k: 'av9', n: 'La moto', e: '🏍️' }, { k: 'av4', n: 'El del rifle', e: '🕶️' }, { k: 'av1', n: 'El helicóptero', e: '🚁' },
   ];
+  // Hitos de la bolsa comunitaria (se pueden sobrescribir desde la tabla public.hitos en Supabase)
+  const HITOS_DEFAULT = [
+    { pct: 25, titulo: 'Vice Beach', premio: 'Noche de pizza. La paga el último del ranking.', desbloquea: 'la bolsa en modo neón' },
+    { pct: 50, titulo: 'Grassrivers', premio: 'Maratón de GTA Online en Discord.', desbloquea: 'el arte completo del póster en la portada' },
+    { pct: 75, titulo: 'Mount Kalaga', premio: 'El primero del ranking elige el nombre del crew.', desbloquea: 'marco dorado en las cards' },
+    { pct: 100, titulo: 'Leonida Keys', premio: 'Día 1 todos juntos. Nadie se queda sin copia.', desbloquea: 'lluvia de confeti y título de crew' },
+  ];
   const esAvatar = (v) => /^av[1-9]$/.test(String(v || ''));
   const avatarSrc = (v) => `assets/av/${String(v).slice(2)}.jpg`;
   const avatarNombre = (v) => (AVATARES.find((x) => x.k === v) || {}).n || '';
@@ -225,6 +232,10 @@
           .order('creado_en', { ascending: false }).limit(limite));
         return rows.filter((r) => r.alcancias).map((r) => ({ ...r, nombre: r.alcancias.nombre, emoji: r.alcancias.emoji, slug: r.alcancias.slug }));
       },
+      async hitos() {
+        const r = await sb.from('hitos').select('pct,titulo,premio,desbloquea').order('pct');
+        return (r.error || !r.data || !r.data.length) ? HITOS_DEFAULT : r.data;
+      },
       async crear({ nombre, emoji, pin, fecha_meta }) {
         return chk(await sb.rpc('crear_alcancia', { p_nombre: nombre, p_emoji: emoji, p_pin: pin, p_fecha_meta: fecha_meta }));
       },
@@ -291,6 +302,7 @@
           return { ...ap, nombre: a.nombre, emoji: a.emoji, slug: a.slug };
         }).filter((x) => x.nombre);
       },
+      async hitos() { return HITOS_DEFAULT; },
       async crear({ nombre, emoji, pin, fecha_meta }) {
         await wait();
         if (!/^\d{4,6}$/.test(pin)) throw new Error('El PIN debe tener entre 4 y 6 dígitos');
@@ -585,6 +597,59 @@
       </section>`;
   }
 
+  // Bolsa comunitaria: total del grupo frente a META × alcancías
+  function calcularBolsa(lista) {
+    const n = Math.max(1, lista.length);
+    const total = lista.reduce((s, a) => s + a.total, 0);
+    const metaGrupo = META * n;
+    const pct = Math.min(100, (total / metaGrupo) * 100);
+    return { n, total, metaGrupo, pct, copias: Math.min(n, Math.floor(total / META)) };
+  }
+  function bolsaHTML(b, hitos) {
+    const sig = hitos.find((h) => b.pct < h.pct);
+    const copiasHTML = Array.from({ length: b.n }, (_, i) => `<span class="copia ${i < b.copias ? 'copia--on' : ''}" title="${i < b.copias ? 'Copia asegurada' : 'Copia pendiente'}">🎟️</span>`).join('');
+    return `
+      <section class="bolsa panel" aria-labelledby="t-bolsa" data-pct="${Math.floor(b.pct)}">
+        <div class="bolsa__head">
+          <div>
+            <p class="kicker">Bolsa comunitaria</p>
+            <h2 id="t-bolsa" class="bolsa__total">${fmtV(b.total)}</h2>
+            <p class="sub">de <b>${fmtV(b.metaGrupo)}</b> para que ${b.n === 1 ? 'haya una copia' : `las ${b.n} personas tengan su copia`} · <b>${Math.floor(b.pct)}%</b></p>
+          </div>
+          <div class="copias" aria-label="${b.copias} de ${b.n} copias aseguradas">
+            <div class="copias__fila">${copiasHTML}</div>
+            <small><b>${b.copias}</b> de ${b.n} ${plural(b.n, 'copia asegurada', 'copias aseguradas')}</small>
+          </div>
+        </div>
+        <div class="bolsa__bar">
+          <div class="bar bar--lg ${b.pct >= 100 ? 'bar--done' : ''}"><i style="width:${b.pct.toFixed(1)}%"></i></div>
+          ${hitos.filter((h) => h.pct < 100).map((h) => `<span class="marca ${b.pct >= h.pct ? 'marca--on' : ''}" style="left:${h.pct}%"><i></i>${h.pct}%</span>`).join('')}
+        </div>
+        <ol class="hitos">
+          ${hitos.map((h) => `
+            <li class="hito ${b.pct >= h.pct ? 'hito--on' : ''}">
+              <span class="hito__pct">${h.pct}%</span>
+              <div class="hito__txt"><b>${esc(h.titulo)}</b><small>${esc(h.premio)}</small>${h.desbloquea ? `<em>${b.pct >= h.pct ? 'Desbloqueado' : 'Desbloquea'}: ${esc(h.desbloquea)}</em>` : ''}</div>
+              <span class="hito__estado" aria-hidden="true">${b.pct >= h.pct ? '✅' : '🔒'}</span>
+            </li>`).join('')}
+        </ol>
+        <p class="bolsa__next">${sig ? `Faltan <b>${fmtV(sig.pct / 100 * b.metaGrupo - b.total)}</b> para «${esc(sig.titulo)}».` : '🏁 Todos los hitos del grupo cumplidos. Nos vemos en Leonida.'}</p>
+      </section>`;
+  }
+  // Desbloqueos visuales según el hito alcanzado
+  function aplicarDesbloqueos(pct) {
+    const nivel = pct >= 100 ? 100 : pct >= 75 ? 75 : pct >= 50 ? 50 : pct >= 25 ? 25 : 0;
+    document.body.dataset.hito = String(nivel);
+    const img = $('.hero__bg img'), src = $('.hero__bg source');
+    if (img && nivel >= 50 && !img.dataset.poster) { img.dataset.poster = '1'; img.src = 'assets/poster_full.jpg'; if (src) src.srcset = 'assets/trailer2.jpg'; }
+    if (nivel >= 100 && !sessionStorage.getItem('alcancia_vi_confeti')) {
+      try { sessionStorage.setItem('alcancia_vi_confeti', '1'); } catch { /* nada */ }
+      const c = document.createElement('div'); c.className = 'confeti'; c.setAttribute('aria-hidden', 'true');
+      c.innerHTML = Array.from({ length: 60 }, (_, i) => `<i style="left:${Math.random() * 100}%;animation-delay:${(Math.random() * 2).toFixed(2)}s;animation-duration:${(3 + Math.random() * 3).toFixed(2)}s;background:${['#5b63e6', '#a83fc9', '#ff4fa3', '#ff8757', '#ffc04d'][i % 5]}"></i>`).join('');
+      document.body.appendChild(c); setTimeout(() => c.remove(), 9000);
+    }
+  }
+
   function feedHTML(items) {
     if (!items.length) return '';
     return `
@@ -626,6 +691,11 @@
           <h1 class="hero__title">La alcancía <em>VI</em></h1>
           <p class="hero__sub">Junta <b>${fmtV(META)}</b> antes del lanzamiento. Crea tu alcancía, anota cada aporte y mira si vas al ritmo del grupo.</p>
           ${countdownHTML()}
+          <a class="hero__bolsa" href="#bolsa" id="hero-bolsa">
+            <small>La bolsa del grupo</small>
+            <b>…</b>
+            <span>Cargando…</span>
+          </a>
           <p class="hero__meta">Fecha estimada PC: <b>${fmtFecha(FECHA_DEFAULT)}</b> · quedan <b>${ref.meses} meses</b> · desde cero necesitas <b>${fmtV(ref.cuotaMes)}/mes</b></p>
           <div class="hero__cta" id="hero-cta">
             <a class="btn btn--primary" href="#/nueva">Crear mi alcancía</a>
@@ -635,6 +705,7 @@
       </header>
       <main class="wrap">
         ${bannerDemo()}
+        <div id="bolsa"></div>
         <div id="mias"></div>
         <section id="lista" aria-labelledby="t-grupo">
           <div class="sec-head">
@@ -655,10 +726,21 @@
     let lista = [];
     const cargar = async () => {
       try {
-        const [l, act, tasas] = await Promise.all([store.listar(), store.actividad(8).catch(() => []), obtenerTasas()]);
+        const [l, act, tasas, hitos] = await Promise.all([store.listar(), store.actividad(8).catch(() => []), obtenerTasas(), store.hitos().catch(() => HITOS_DEFAULT)]);
         lista = l.sort((a, b) => (b.total / META) - (a.total / META) || a.creado_en.localeCompare(b.creado_en));
         const grid = $('#grid'); if (!grid) return;
         const totalGrupo = lista.reduce((s, a) => s + a.total, 0);
+        const bolsa = calcularBolsa(lista);
+        $('#bolsa').innerHTML = lista.length ? bolsaHTML(bolsa, hitos) : '';
+        const hb = $('#hero-bolsa');
+        if (hb) {
+          hb.querySelector('b').textContent = fmtV(totalGrupo);
+          hb.querySelector('span').textContent = lista.length
+            ? `${bolsa.copias} de ${bolsa.n} ${plural(bolsa.n, 'copia asegurada', 'copias aseguradas')} · ${Math.floor(bolsa.pct)}% de ${fmtV(bolsa.metaGrupo)}`
+            : 'Aún no hay alcancías. Sé el primero.';
+          hb.addEventListener('click', (e) => { e.preventDefault(); const t = $('#bolsa'); t && t.scrollIntoView({ behavior: 'smooth' }); });
+        }
+        aplicarDesbloqueos(lista.length ? bolsa.pct : 0);
         $('#resumen').innerHTML = lista.length
           ? `<b>${lista.length}</b> ${plural(lista.length, 'alcancía', 'alcancías')} · <b>${fmtV(totalGrupo)}</b> ahorrados`
           : 'Aún no hay alcancías';
