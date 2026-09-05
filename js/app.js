@@ -623,19 +623,151 @@
         </div>
         <div class="bolsa__bar">
           <div class="bar bar--lg ${b.pct >= 100 ? 'bar--done' : ''}"><i style="width:${b.pct.toFixed(1)}%"></i></div>
-          ${hitos.filter((h) => h.pct < 100).map((h) => `<span class="marca ${b.pct >= h.pct ? 'marca--on' : ''}" style="left:${h.pct}%"><i></i>${h.pct}%</span>`).join('')}
+          ${hitos.filter((h) => h.pct < 100).map((h) => `<button type="button" class="marca ${b.pct >= h.pct ? 'marca--on' : ''}" style="left:${h.pct}%" data-ir="${h.pct}" title="Ver «${esc(h.titulo)}»"><i></i>${h.pct}%</button>`).join('')}
         </div>
-        <ol class="hitos">
-          ${hitos.map((h) => `
-            <li class="hito ${b.pct >= h.pct ? 'hito--on' : ''}">
-              <span class="hito__pct">${h.pct}%</span>
-              <div class="hito__txt"><b>${esc(h.titulo)}</b><small>${esc(h.premio)}</small>${h.desbloquea ? `<em>${b.pct >= h.pct ? 'Desbloqueado' : 'Desbloquea'}: ${esc(h.desbloquea)}</em>` : ''}</div>
-              <span class="hito__estado" aria-hidden="true">${b.pct >= h.pct ? '✅' : '🔒'}</span>
-            </li>`).join('')}
-        </ol>
+        ${rutaHTML(b, hitos)}
         <p class="bolsa__next">${sig ? `Faltan <b>${fmtV(sig.pct / 100 * b.metaGrupo - b.total)}</b> para «${esc(sig.titulo)}».` : '🏁 Todos los hitos del grupo cumplidos. Nos vemos en Leonida.'}</p>
       </section>`;
   }
+  // Ruta de hitos: paradas sobre una carretera con el carro del grupo en el % actual
+  function paradasDe(hitos) {
+    return [{ pct: 0, titulo: 'Vice City', premio: 'Punto de partida. Aquí empieza el viaje del grupo.', desbloquea: null, inicio: true }, ...hitos];
+  }
+  function posicionCarro(pct, paradas) {
+    const n = paradas.length;
+    if (n < 2) return 0;
+    for (let i = 0; i < n - 1; i++) {
+      const a = paradas[i].pct, z = paradas[i + 1].pct;
+      if (pct <= z) return ((i + Math.max(0, Math.min(1, (pct - a) / Math.max(1, z - a)))) / (n - 1)) * 100;
+    }
+    return 100;
+  }
+  function rutaHTML(b, hitos) {
+    const paradas = paradasDe(hitos);
+    const sig = paradas.find((h) => !h.inicio && b.pct < h.pct);
+    const carX = posicionCarro(b.pct, paradas);
+    return `
+      <div class="ruta" aria-label="Ruta de hitos del grupo">
+        <button type="button" class="ruta__nav ruta__nav--prev" aria-label="Parada anterior">‹</button>
+        <button type="button" class="ruta__nav ruta__nav--next" aria-label="Siguiente parada">›</button>
+        <div class="ruta__scroll" id="ruta-scroll" tabindex="0">
+          <div class="ruta__track">
+            <div class="ruta__road"><i style="width:${carX.toFixed(2)}%"></i></div>
+            <div class="ruta__car" style="left:calc(var(--w) / 2 + (100% - var(--w)) * ${(carX / 100).toFixed(4)})" title="El grupo va en ${Math.floor(b.pct)}%"><span>🏎️</span><small>${Math.floor(b.pct)}%</small></div>
+            ${paradas.map((h, i) => {
+              const on = b.pct >= h.pct, esSig = sig && sig.pct === h.pct;
+              const falta = esSig ? fmtV(h.pct / 100 * b.metaGrupo - b.total) : '';
+              return `
+              <article class="parada ${on ? 'parada--on' : ''} ${esSig ? 'parada--next' : ''} ${h.inicio ? 'parada--inicio' : ''}" data-i="${i}" data-pct="${h.pct}">
+                <div class="parada__nodo"><span>${h.inicio ? '🏁' : on ? '✓' : h.pct + '%'}</span></div>
+                <div class="parada__card">
+                  <small class="parada__pct">${h.inicio ? 'Salida' : `Hito · ${h.pct}% de la bolsa`}</small>
+                  <b>${esc(h.titulo)}</b>
+                  <p>${esc(h.premio)}</p>
+                  ${h.desbloquea ? `<em>${on ? '✨ Desbloqueado' : '🔒 Desbloquea'}: ${esc(h.desbloquea)}</em>` : ''}
+                  <span class="parada__estado">${h.inicio ? 'El grupo ya está en camino' : on ? '✅ Conseguido' : esSig ? `🎯 Siguiente · faltan <b>${falta}</b>` : '🔒 Más adelante'}</span>
+                </div>
+              </article>`;
+            }).join('')}
+          </div>
+        </div>
+        <div class="ruta__dots" role="tablist" aria-label="Paradas">${paradas.map((h, i) => `<button type="button" role="tab" class="ruta__dot ${b.pct >= h.pct ? 'ruta__dot--on' : ''}" data-i="${i}" aria-label="${esc(h.titulo)}"></button>`).join('')}</div>
+      </div>`;
+  }
+  // Navegación de la ruta por delegación: los controles siguen funcionando
+  // aunque el panel se vuelva a pintar (realtime, cambio de moneda, etc.).
+  const RUTA = {
+    sc: () => $('#ruta-scroll'),
+    paradas: () => $$('#ruta-scroll .parada'),
+    centro: (el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; },
+    centroSc() { const sc = this.sc(); if (!sc) return 0; const r = sc.getBoundingClientRect(); return r.left + r.width / 2; },
+    irA(i, suave = true) {
+      const sc = this.sc(), ps = this.paradas(); if (!sc || !ps.length) return;
+      const el = ps[Math.max(0, Math.min(ps.length - 1, i))];
+      const delta = Math.round(this.centro(el) - this.centroSc());
+      if (!delta) return;
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const destino = sc.scrollLeft + delta;
+      if (!suave || reduce) { sc.scrollLeft = destino; return; }
+      const antes = sc.scrollLeft;
+      sc.scrollBy({ left: delta, behavior: 'smooth' });
+      // Respaldo: si el navegador no anima (pestaña en segundo plano, motor sin
+      // scroll suave), se salta directo para que la navegación nunca se quede quieta.
+      clearTimeout(this._fb);
+      this._fb = setTimeout(() => { if (Math.abs(sc.scrollLeft - antes) < 2) sc.scrollLeft = destino; }, 350);
+    },
+    activa() {
+      const ps = this.paradas(); if (!ps.length) return 0;
+      const c = this.centroSc();
+      let mejor = 0, dist = Infinity;
+      ps.forEach((el, i) => { const d = Math.abs(this.centro(el) - c); if (d < dist) { dist = d; mejor = i; } });
+      ps.forEach((el, i) => el.classList.toggle('parada--activa', i === mejor));
+      $$('.ruta__dot').forEach((d, i) => d.setAttribute('aria-selected', String(i === mejor)));
+      return mejor;
+    },
+  };
+
+  // Un solo juego de listeners para toda la vida de la página
+  let rutaListo = false;
+  function bindRutaGlobal() {
+    if (rutaListo) return; rutaListo = true;
+    document.addEventListener('click', (e) => {
+      const nav = e.target.closest('.ruta__nav');
+      if (nav) { RUTA.irA(RUTA.activa() + (nav.classList.contains('ruta__nav--next') ? 1 : -1)); return; }
+      const dot = e.target.closest('.ruta__dot');
+      if (dot) { RUTA.irA(Number(dot.dataset.i)); return; }
+      const marca = e.target.closest('.marca[data-ir]');
+      if (marca) {
+        const i = RUTA.paradas().findIndex((p) => Number(p.dataset.pct) === Number(marca.dataset.ir));
+        if (i >= 0) RUTA.irA(i);
+      }
+    });
+    document.addEventListener('scroll', (e) => {
+      if (!e.target.closest || !(e.target.id === 'ruta-scroll')) return;
+      clearTimeout(RUTA._t); RUTA._t = setTimeout(() => RUTA.activa(), 60);
+    }, true);
+    document.addEventListener('keydown', (e) => {
+      const sc = RUTA.sc();
+      if (!sc || document.activeElement !== sc) return;
+      if (e.key === 'ArrowRight') { e.preventDefault(); RUTA.irA(RUTA.activa() + 1); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); RUTA.irA(RUTA.activa() - 1); }
+    });
+    // Arrastre con mouse (en táctil el scroll nativo ya funciona)
+    let drag = null;
+    document.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      const sc = e.target.closest && e.target.closest('#ruta-scroll'); if (!sc) return;
+      drag = { x: e.clientX, left: sc.scrollLeft, movido: false, sc };
+      sc.classList.add('ruta__scroll--drag');
+    });
+    document.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x;
+      if (Math.abs(dx) > 4) drag.movido = true;
+      drag.sc.scrollLeft = drag.left - dx;
+    });
+    const soltar = () => {
+      if (!drag) return;
+      drag.sc.classList.remove('ruta__scroll--drag');
+      const movido = drag.movido; drag = null;
+      if (movido) setTimeout(() => RUTA.irA(RUTA.activa()), 20);
+    };
+    document.addEventListener('pointerup', soltar);
+    document.addEventListener('pointercancel', soltar);
+    document.addEventListener('click', (e) => { if (drag && drag.movido) { e.preventDefault(); e.stopPropagation(); } }, true);
+  }
+
+  // Tras cada render: centrar la siguiente parada pendiente
+  function centrarRuta() {
+    const ps = RUTA.paradas(); if (!ps.length) return;
+    bindRutaGlobal();
+    const sig = ps.findIndex((p) => p.classList.contains('parada--next'));
+    const destino = sig >= 0 ? sig : ps.length - 1;
+    const centrar = () => { RUTA.irA(destino, false); RUTA.activa(); };
+    centrar();                       // el layout ya está aplicado
+    requestAnimationFrame(centrar);  // y de nuevo por si las fuentes cambian medidas
+  }
+
   // Desbloqueos visuales según el hito alcanzado
   function aplicarDesbloqueos(pct) {
     const nivel = pct >= 100 ? 100 : pct >= 75 ? 75 : pct >= 50 ? 50 : pct >= 25 ? 25 : 0;
@@ -732,6 +864,7 @@
         const totalGrupo = lista.reduce((s, a) => s + a.total, 0);
         const bolsa = calcularBolsa(lista);
         $('#bolsa').innerHTML = lista.length ? bolsaHTML(bolsa, hitos) : '';
+        centrarRuta();
         const hb = $('#hero-bolsa');
         if (hb) {
           hb.querySelector('b').textContent = fmtV(totalGrupo);
