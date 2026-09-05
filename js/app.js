@@ -9,6 +9,37 @@
   const META = Number(CFG.META_COP) || 430000;
   const FECHA_DEFAULT = CFG.FECHA_META_DEFAULT || '2027-02-01';
   const EMOJIS = ['🐷', '💰', '🌴', '🦩', '🐊', '🚗', '🏍️', '🚁', '🛥️', '🕶️', '💎', '🔫', '🌅', '🏝️', '🎮', '🔥'];
+  // Personajes del póster oficial (assets/av/N.jpg). Se guardan como 'avN' en el campo emoji.
+  const AVATARES = [
+    { k: 'av2', n: 'Lucia y Jason', e: '👫' }, { k: 'av7', n: 'El caimán', e: '🐊' }, { k: 'av3', n: 'Lancha y flamenco', e: '🦩' },
+    { k: 'av5', n: 'Vice Beach', e: '🍹' }, { k: 'av8', n: 'Cadenas de oro', e: '⛓️' }, { k: 'av6', n: 'El deportivo', e: '🚗' },
+    { k: 'av9', n: 'La moto', e: '🏍️' }, { k: 'av4', n: 'El del rifle', e: '🕶️' }, { k: 'av1', n: 'El helicóptero', e: '🚁' },
+  ];
+  const esAvatar = (v) => /^av[1-9]$/.test(String(v || ''));
+  const avatarSrc = (v) => `assets/av/${String(v).slice(2)}.jpg`;
+  const avatarNombre = (v) => (AVATARES.find((x) => x.k === v) || {}).n || '';
+  // Render del avatar (imagen del póster o emoji) con la clase de tamaño que se pida
+  const avatarHTML = (v, cls = '') => esAvatar(v)
+    ? `<span class="avatar avatar--img ${cls}" aria-hidden="true"><img src="${avatarSrc(v)}" alt=""></span>`
+    : `<span class="avatar ${cls}" aria-hidden="true">${esc(v || '🐷')}</span>`;
+  const emojiTexto = (v) => esAvatar(v) ? (AVATARES.find((x) => x.k === v) || {}).e || '🐷' : (v || '🐷');
+  const artHTML = (v) => esAvatar(v) ? `<div class="card__art" aria-hidden="true"><img src="${avatarSrc(v)}" alt="" loading="lazy"></div>` : '';
+  // Selector de avatar (personajes primero, emojis después)
+  const pickerHTML = (sel) => `
+    <p class="picker__title">Personajes del póster</p>
+    <div class="avatares" role="radiogroup" aria-label="Personaje">
+      ${AVATARES.map((a) => `<button class="av-opt js-pick" type="button" role="radio" aria-pressed="${a.k === sel}" aria-checked="${a.k === sel}" data-emoji="${a.k}" title="${a.n}"><img src="${avatarSrc(a.k)}" alt="${a.n}"></button>`).join('')}
+    </div>
+    <p class="picker__title">O un ícono</p>
+    <div class="emojis" role="radiogroup" aria-label="Ícono">
+      ${EMOJIS.map((e) => `<button class="emoji js-pick" type="button" role="radio" aria-pressed="${e === sel}" aria-checked="${e === sel}" data-emoji="${e}">${e}</button>`).join('')}
+    </div>`;
+  function bindPicker(root, onPick) {
+    $$('.js-pick', root).forEach((b) => b.addEventListener('click', () => {
+      onPick(b.dataset.emoji);
+      $$('.js-pick', root).forEach((x) => { const on = x === b; x.setAttribute('aria-pressed', on); x.setAttribute('aria-checked', on); });
+    }));
+  }
   // Monedas aceptadas. Todo se guarda convertido a COP con la tasa del día.
   const MONEDAS = {
     COP: { s: '$', n: 'Pesos', rapidos: [10000, 20000, 50000] },
@@ -113,17 +144,17 @@
     return { racha, estaSemana };
   }
   const MEDALLAS = [
-    { id: 'primer', e: '🎬', n: 'Primer paso', d: 'Tu primer aporte registrado', ok: (x) => x.n >= 1 },
-    { id: 'p25', e: '🌴', n: 'Un cuarto', d: '25% de la meta', ok: (x) => x.pct >= 25 },
-    { id: 'p50', e: '🌅', n: 'Mitad del camino', d: '50% de la meta', ok: (x) => x.pct >= 50 },
-    { id: 'p75', e: '🦩', n: 'Ya se ve Leonida', d: '75% de la meta', ok: (x) => x.pct >= 75 },
-    { id: 'meta', e: '🏆', n: 'Listo para Leonida', d: 'Meta cumplida', ok: (x) => x.completo },
+    { id: 'primer', e: '🛣️', n: 'Saliendo de Vice City', d: 'Tu primer aporte: arranca el viaje', ok: (x) => x.n >= 1 },
+    { id: 'p25', e: '🌴', n: 'Vice Beach', d: '25% de la meta', ok: (x) => x.pct >= 25 },
+    { id: 'p50', e: '🐊', n: 'Grassrivers', d: '50%: mitad del mapa recorrida', ok: (x) => x.pct >= 50 },
+    { id: 'p75', e: '⛰️', n: 'Mount Kalaga', d: '75% de la meta', ok: (x) => x.pct >= 75 },
+    { id: 'meta', e: '🏝️', n: 'Leonida Keys', d: 'Meta cumplida: el juego es tuyo', ok: (x) => x.completo },
     { id: 'racha3', e: '🔥', n: 'Racha x3', d: '3 semanas seguidas aportando', ok: (x) => x.racha >= 3 },
     { id: 'racha8', e: '⚡', n: 'Imparable', d: '8 semanas seguidas aportando', ok: (x) => x.racha >= 8 },
     { id: 'const', e: '📆', n: 'Constante', d: '5 aportes o más', ok: (x) => x.n >= 5 },
-    { id: 'coco', e: '🐊', n: 'Cocodrilo', d: 'Un aporte de $100.000 o más', ok: (x) => x.max >= 100000 },
-    { id: 'deuna', e: '💎', n: 'De una', d: 'Toda la meta en un solo aporte', ok: (x) => x.max >= META },
-    { id: 'adel', e: '🚀', n: 'Adelantado', d: 'Más de una cuota por delante del plan', ok: (x) => !x.completo && x.cuotaMes > 0 && x.diff >= x.cuotaMes },
+    { id: 'coco', e: '💵', n: 'Golpe grande', d: 'Un aporte de $100.000 o más', ok: (x) => x.max >= 100000 },
+    { id: 'deuna', e: '💎', n: 'Atraco perfecto', d: 'Toda la meta en un solo aporte', ok: (x) => x.max >= META },
+    { id: 'adel', e: '🏎️', n: 'Full acelerador', d: 'Más de una cuota por delante del plan', ok: (x) => !x.completo && x.cuotaMes > 0 && x.diff >= x.cuotaMes },
   ];
   const medallasCtx = (ctx) => MEDALLAS.map((m) => ({ ...m, ganada: !!m.ok(ctx) }));
   function medallasDe(aportes, c) {
@@ -330,7 +361,7 @@
     document.addEventListener('keydown', onKey);
     $('.modal__close', bg).addEventListener('click', cerrar);
     bg.addEventListener('click', (e) => { if (e.target === bg) cerrar(); });
-    setTimeout(() => { const f = $('input, button.emoji', bg); f && f.focus(); }, 30);
+    setTimeout(() => { const f = $('input, button.av-opt, button.emoji', bg); f && f.focus(); }, 30);
     return { el: bg, cerrar };
   }
 
@@ -462,7 +493,7 @@
       ${esStandalone() ? '' : '<p style="margin-top:10px"><button class="btn btn--ghost btn--sm js-instalar-siempre" type="button">📲 Instalar como app</button></p>'}
     </footer>`;
 
-  const vistaSelectorHTML = () => `<div class="seg seg--mini js-vista" role="group" aria-label="Moneda en la que se muestran los montos" title="Ver montos en…">${Object.keys(MONEDAS).map((k) => `<button type="button" class="seg__btn" data-m="${k}" aria-pressed="${k === getMonedaPref()}">${MONEDAS[k].s}</button>`).join('')}</div>`;
+  const vistaSelectorHTML = () => `<div class="seg seg--mini js-vista" role="group" aria-label="Moneda en la que se muestran los montos" title="Ver montos en…">${Object.keys(MONEDAS).map((k) => `<button type="button" class="seg__btn" data-m="${k}" aria-pressed="${k === getMonedaPref()}">${k}</button>`).join('')}</div>`;
   const vistaNotaHTML = () => VISTA.m === 'COP' ? '' : `<p class="vista-nota">Montos en ${MONEDAS[VISTA.m].n.toLowerCase()} con la tasa de hoy (${fmtMoneda(1, VISTA.m)} = ${fmtCOP(VISTA.tasa)}). La meta real es ${fmtCOP(META)} por persona.</p>`;
   function bindVista() { $$('.js-vista .seg__btn, .mia .seg__btn').forEach((b) => b.addEventListener('click', () => { setMonedaPref(b.dataset.m); render({ keepScroll: true }); })); }
 
@@ -495,8 +526,9 @@
     const nMedallas = medallasCtx({ n: a.n, pct: c.pct, completo: c.completo, racha: r.racha, max: a.max || 0, diff: c.diff, cuotaMes: c.cuotaMes }).filter((m) => m.ganada).length;
     return `
       <a class="card ${c.completo ? 'card--done' : ''}" href="#/a/${encodeURIComponent(a.slug)}">
+        ${artHTML(a.emoji)}
         <div class="card__top">
-          <span class="avatar" aria-hidden="true">${esc(a.emoji)}</span>
+          ${avatarHTML(a.emoji)}
           <div><h3>${esc(a.nombre)}</h3><small>${r.racha ? `🔥 ${r.racha} ${plural(r.racha, 'semana', 'semanas')} seguidas` : (a.n ? `${a.n} ${plural(a.n, 'aporte', 'aportes')}` : 'Sin aportes aún')}${nMedallas ? ` · 🏅 ${nMedallas}` : ''}</small></div>
           <span class="rank rank--${i + 1}">#${i + 1}</span>
         </div>
@@ -524,16 +556,17 @@
     } else {
       chipsHTML = `<span class="mia__sin-tasa">No pude obtener la tasa de cambio. Usa "Otro monto…" y escríbela a mano.</span>`;
     }
-    const selector = `<div class="seg seg--mini" role="group" aria-label="Moneda">${Object.keys(MONEDAS).map((m) => `<button type="button" class="seg__btn" data-m="${m}" aria-pressed="${m === moneda}">${MONEDAS[m].s}</button>`).join('')}</div>`;
+    const selector = `<div class="seg seg--mini" role="group" aria-label="Moneda">${Object.keys(MONEDAS).map((m) => `<button type="button" class="seg__btn" data-m="${m}" aria-pressed="${m === moneda}">${m}</button>`).join('')}</div>`;
     const estado = c.completo ? '🏆 Meta cumplida. Ya está.'
       : r.estaSemana ? `✅ Ya aportaste esta semana${r.racha > 1 ? ` · racha de ${r.racha} semanas 🔥` : ''}`
         : r.racha > 0 ? `⏳ Aún no has aportado esta semana. Racha en juego: ${r.racha} 🔥`
           : '⏳ Esta semana todavía no has metido nada.';
     return `
       <section class="mia panel" data-id="${a.id}" aria-label="Tu alcancía">
+        ${artHTML(a.emoji)}
         <div class="mia__head">
           <a class="mia__quien" href="#/a/${encodeURIComponent(a.slug)}">
-            <span class="avatar" aria-hidden="true">${esc(a.emoji)}</span>
+            ${avatarHTML(a.emoji)}
             <div><small>Tu alcancía</small><h3>${esc(a.nombre)}</h3></div>
           </a>
           <div class="mia__num"><b>${fmtV(a.total)}</b><small>${Math.floor(c.pct)}% · faltan ${fmtV(c.falta)}</small></div>
@@ -560,7 +593,7 @@
         <ul class="feed__lista">
           ${items.map((x) => `
             <li class="feed__item">
-              <a href="#/a/${encodeURIComponent(x.slug)}" class="feed__quien"><span class="avatar avatar--sm">${esc(x.emoji)}</span></a>
+              <a href="#/a/${encodeURIComponent(x.slug)}" class="feed__quien">${avatarHTML(x.emoji, 'avatar--sm')}</a>
               <div class="feed__txt"><b>${esc(x.nombre)}</b> metió <b class="feed__monto">${esForanea(x.moneda) ? fmtMoneda(x.monto_original, x.moneda) : fmtV(x.monto)}</b>${esForanea(x.moneda) ? ` <span class="feed__aprox">≈ ${fmtCOP(x.monto)}</span>` : ''}${x.nota && x.nota !== 'Aporte rápido' ? ` <span class="feed__nota">“${esc(x.nota)}”</span>` : ''}</div>
               <time class="feed__cuando" datetime="${esc(x.creado_en)}">${tiempoRelativo(x.creado_en)}</time>
             </li>`).join('')}
@@ -689,10 +722,8 @@
                 <input class="input" id="nombre" name="nombre" maxlength="30" minlength="2" placeholder="Ej. Manu, El Pato, Lucía…" required autocomplete="nickname">
               </div>
               <div class="field">
-                <label>Ícono</label>
-                <div class="emojis" role="radiogroup" aria-label="Ícono">
-                  ${EMOJIS.map((e, i) => `<button class="emoji" type="button" role="radio" aria-pressed="${i === 0}" aria-checked="${i === 0}" data-emoji="${e}">${e}</button>`).join('')}
-                </div>
+                <label>Tu personaje</label>
+                ${pickerHTML('av2')}
               </div>
               <div class="field">
                 <label for="fecha">Fecha meta (lanzamiento estimado)</label>
@@ -721,11 +752,8 @@
       </div>`;
     bindInstalar();
 
-    let emoji = EMOJIS[0];
-    $$('.emoji').forEach((b) => b.addEventListener('click', () => {
-      emoji = b.dataset.emoji;
-      $$('.emoji').forEach((x) => { const on = x === b; x.setAttribute('aria-pressed', on); x.setAttribute('aria-checked', on); });
-    }));
+    let emoji = 'av2';
+    bindPicker(document, (v) => { emoji = v; });
     const err = $('#err');
     const mostrarErr = (m) => { err.hidden = false; err.textContent = m; err.scrollIntoView({ block: 'nearest' }); };
 
@@ -796,7 +824,7 @@
           </nav>
           <main class="wrap">
             <header class="perfil">
-              <span class="avatar avatar--xl" aria-hidden="true">${esc(a.emoji)}</span>
+              ${avatarHTML(a.emoji, 'avatar--xl')}
               <div>
                 <h1>${esc(a.nombre)}</h1>
                 <p>Meta: <b>${fmtV(META)}</b> para el <b>${fmtFecha(a.fecha_meta)}</b> · alcancía creada el ${fmtFecha(a.creado_en.slice(0, 10), { day: 'numeric', month: 'short' })}</p>
@@ -870,7 +898,7 @@
     async function compartir() {
       const url = `${location.origin}${location.pathname}#/a/${encodeURIComponent(a.slug)}`;
       const c = calcular(a.total, a.fecha_meta, a.creado_en);
-      const texto = `${a.emoji} ${a.nombre} lleva ${fmtV(a.total)} (${Math.floor(c.pct)}%) para GTA VI. ¡Mira la alcancía!`;
+      const texto = `${emojiTexto(a.emoji)} ${a.nombre} lleva ${fmtV(a.total)} (${Math.floor(c.pct)}%) para GTA VI. ¡Mira la alcancía!`;
       try {
         if (navigator.share) { await navigator.share({ title: 'Alcancía VI', text: texto, url }); return; }
         await navigator.clipboard.writeText(url); toast('Enlace copiado', 'ok');
@@ -1002,7 +1030,7 @@
         <p class="lead">Cambia el nombre, el ícono o la fecha meta. La meta de ${fmtV(META)} es igual para todo el grupo.</p>
         <form class="form" id="f-edit" autocomplete="off" novalidate>
           <div class="field"><label for="e-nombre">Nombre</label><input class="input" id="e-nombre" maxlength="30" minlength="2" value="${esc(a.nombre)}" required></div>
-          <div class="field"><label>Ícono</label><div class="emojis">${EMOJIS.map((e) => `<button class="emoji" type="button" aria-pressed="${e === a.emoji}" data-emoji="${e}">${e}</button>`).join('')}</div></div>
+          <div class="field"><label>Tu personaje</label>${pickerHTML(a.emoji)}</div>
           <div class="field"><label for="e-fecha">Fecha meta</label><input class="input" id="e-fecha" type="date" value="${a.fecha_meta}" min="${minFecha}" required><span class="hint">La cuota mensual se recalcula automáticamente.</span></div>
           <div class="error" id="e-err" hidden></div>
           <div class="form__actions">
@@ -1011,7 +1039,7 @@
           </div>
         </form>`);
       let emoji = a.emoji;
-      $$('.emoji', m.el).forEach((b) => b.addEventListener('click', () => { emoji = b.dataset.emoji; $$('.emoji', m.el).forEach((x) => x.setAttribute('aria-pressed', x === b)); }));
+      bindPicker(m.el, (v) => { emoji = v; });
       $('#f-edit', m.el).addEventListener('submit', async (e) => {
         e.preventDefault();
         const er = $('#e-err', m.el); er.hidden = true;
