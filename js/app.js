@@ -15,12 +15,17 @@
     { k: 'av5', n: 'Vice Beach', e: '🍹' }, { k: 'av8', n: 'Cadenas de oro', e: '⛓️' }, { k: 'av6', n: 'El deportivo', e: '🚗' },
     { k: 'av9', n: 'La moto', e: '🏍️' }, { k: 'av4', n: 'El del rifle', e: '🕶️' }, { k: 'av1', n: 'El helicóptero', e: '🚁' },
   ];
-  // Hitos de la bolsa comunitaria (se pueden sobrescribir desde la tabla public.hitos en Supabase)
+  // Hitos: uno por cada copia del juego que asegure el grupo.
+  // Se pueden sobrescribir desde la tabla public.hitos en Supabase.
   const HITOS_DEFAULT = [
-    { pct: 25, titulo: 'Vice Beach', premio: 'Noche de pizza. La paga el último del ranking.', desbloquea: 'la bolsa en modo neón' },
-    { pct: 50, titulo: 'Grassrivers', premio: 'Maratón de GTA Online en Discord.', desbloquea: 'el arte completo del póster en la portada' },
-    { pct: 75, titulo: 'Mount Kalaga', premio: 'El primero del ranking elige el nombre del crew.', desbloquea: 'marco dorado en las cards' },
-    { pct: 100, titulo: 'Leonida Keys', premio: 'Día 1 todos juntos. Nadie se queda sin copia.', desbloquea: 'lluvia de confeti y título de crew' },
+    { copias: 1, titulo: 'Vice Beach', premio: 'Noche de pizza. La paga el último del ranking.', desbloquea: 'la bolsa en modo neón' },
+    { copias: 2, titulo: 'Grassrivers', premio: 'Maratón de GTA Online en Discord.', desbloquea: 'el arte completo del póster en la portada' },
+    { copias: 3, titulo: 'Mount Kalaga', premio: 'El primero del ranking elige el nombre del crew.', desbloquea: 'marco dorado en las cards' },
+    { copias: 4, titulo: 'Port Gellhorn', premio: 'Ronda de lo que el grupo decida.', desbloquea: 'lluvia de confeti y título de crew' },
+    { copias: 5, titulo: 'Ambrosia', premio: 'Ronda de lo que el grupo decida.', desbloquea: null },
+    { copias: 6, titulo: 'Hamlet', premio: 'Ronda de lo que el grupo decida.', desbloquea: null },
+    { copias: 7, titulo: 'Leonida Keys', premio: 'Ronda de lo que el grupo decida.', desbloquea: null },
+    { copias: 8, titulo: 'Little Cuba', premio: 'Ronda de lo que el grupo decida.', desbloquea: null },
   ];
   const esAvatar = (v) => /^av[1-9]$/.test(String(v || ''));
   const avatarSrc = (v) => `assets/av/${String(v).slice(2)}.jpg`;
@@ -233,7 +238,7 @@
         return rows.filter((r) => r.alcancias).map((r) => ({ ...r, nombre: r.alcancias.nombre, emoji: r.alcancias.emoji, slug: r.alcancias.slug }));
       },
       async hitos() {
-        const r = await sb.from('hitos').select('pct,titulo,premio,desbloquea').order('pct');
+        const r = await sb.from('hitos').select('copias,titulo,premio,desbloquea').order('copias');
         return (r.error || !r.data || !r.data.length) ? HITOS_DEFAULT : r.data;
       },
       async crear({ nombre, emoji, pin, fecha_meta }) {
@@ -603,10 +608,30 @@
     const total = lista.reduce((s, a) => s + a.total, 0);
     const metaGrupo = META * n;
     const pct = Math.min(100, (total / metaGrupo) * 100);
-    return { n, total, metaGrupo, pct, copias: Math.min(n, Math.floor(total / META)) };
+    const copias = Math.min(n, Math.floor(total / META));
+    return { n, total, metaGrupo, pct, copias, completo: copias >= n };
+  }
+  // Une el catálogo con lo guardado en Supabase y arma una parada por copia
+  function paradasDeCopias(b, hitos) {
+    const porCopia = {};
+    (hitos || []).forEach((h) => { if (h && h.copias) porCopia[h.copias] = h; });
+    const paradas = [{ k: 0, titulo: 'Vice City', premio: 'Punto de partida. Aquí arranca el viaje del grupo.', desbloquea: null, inicio: true }];
+    for (let k = 1; k <= b.n; k++) {
+      const h = porCopia[k] || HITOS_DEFAULT[k - 1] || {};
+      paradas.push({
+        k,
+        titulo: h.titulo || `Copia ${k}`,
+        premio: h.premio || 'El grupo decide el premio.',
+        desbloquea: h.desbloquea || null,
+        todas: k === b.n,
+        objetivo: k * META,
+      });
+    }
+    return paradas;
   }
   function bolsaHTML(b, hitos) {
-    const sig = hitos.find((h) => b.pct < h.pct);
+    const paradas = paradasDeCopias(b, hitos);
+    const sig = paradas.find((h) => !h.inicio && b.copias < h.k);
     const copiasHTML = Array.from({ length: b.n }, (_, i) => `<span class="copia ${i < b.copias ? 'copia--on' : ''}" title="${i < b.copias ? 'Copia asegurada' : 'Copia pendiente'}">🎟️</span>`).join('');
     return `
       <section class="bolsa panel" aria-labelledby="t-bolsa" data-pct="${Math.floor(b.pct)}">
@@ -623,57 +648,52 @@
         </div>
         <div class="bolsa__bar">
           <div class="bar bar--lg ${b.pct >= 100 ? 'bar--done' : ''}"><i style="width:${b.pct.toFixed(1)}%"></i></div>
-          ${hitos.filter((h) => h.pct < 100).map((h) => `<button type="button" class="marca ${b.pct >= h.pct ? 'marca--on' : ''}" style="left:${h.pct}%" data-ir="${h.pct}" title="Ver «${esc(h.titulo)}»"><i></i>${h.pct}%</button>`).join('')}
+          ${paradas.filter((h) => !h.inicio && !h.todas).map((h) => `<button type="button" class="marca ${b.copias >= h.k ? 'marca--on' : ''}" style="left:${(h.k / b.n * 100).toFixed(2)}%" data-ir="${h.k}" title="Ver «${esc(h.titulo)}»"><i></i>${h.k}🎟️</button>`).join('')}
         </div>
-        ${rutaHTML(b, hitos)}
-        <p class="bolsa__next">${sig ? `Faltan <b>${fmtV(sig.pct / 100 * b.metaGrupo - b.total)}</b> para «${esc(sig.titulo)}».` : '🏁 Todos los hitos del grupo cumplidos. Nos vemos en Leonida.'}</p>
+        ${rutaHTML(b, paradas)}
+        <p class="bolsa__next">${sig ? `Faltan <b>${fmtV(sig.objetivo - b.total)}</b> para la copia ${sig.k} · «${esc(sig.titulo)}».` : '🏁 Todas las copias aseguradas. Nos vemos en Leonida.'}</p>
       </section>`;
   }
   // Ruta de hitos: paradas sobre una carretera con el carro del grupo en el % actual
-  function paradasDe(hitos) {
-    return [{ pct: 0, titulo: 'Vice City', premio: 'Punto de partida. Aquí empieza el viaje del grupo.', desbloquea: null, inicio: true }, ...hitos];
-  }
-  function posicionCarro(pct, paradas) {
+  // El carro avanza de parada en parada según cuántas copias lleva la bolsa
+  function posicionCarro(b, paradas) {
     const n = paradas.length;
     if (n < 2) return 0;
-    for (let i = 0; i < n - 1; i++) {
-      const a = paradas[i].pct, z = paradas[i + 1].pct;
-      if (pct <= z) return ((i + Math.max(0, Math.min(1, (pct - a) / Math.max(1, z - a)))) / (n - 1)) * 100;
-    }
-    return 100;
+    const avance = Math.min(b.n, b.total / META);   // copias con decimales
+    return (avance / (n - 1)) * 100;
   }
-  function rutaHTML(b, hitos) {
-    const paradas = paradasDe(hitos);
-    const sig = paradas.find((h) => !h.inicio && b.pct < h.pct);
-    const carX = posicionCarro(b.pct, paradas);
+  function rutaHTML(b, paradas) {
+    const sig = paradas.find((h) => !h.inicio && b.copias < h.k);
+    const carX = posicionCarro(b, paradas);
     return `
-      <div class="ruta" aria-label="Ruta de hitos del grupo">
+      <div class="ruta" aria-label="Ruta de copias del grupo">
         <button type="button" class="ruta__nav ruta__nav--prev" aria-label="Parada anterior">‹</button>
         <button type="button" class="ruta__nav ruta__nav--next" aria-label="Siguiente parada">›</button>
         <div class="ruta__scroll" id="ruta-scroll" tabindex="0">
           <div class="ruta__track">
             <div class="ruta__road"><i style="width:${carX.toFixed(2)}%"></i></div>
-            <div class="ruta__car" style="left:calc(var(--w) / 2 + (100% - var(--w)) * ${(carX / 100).toFixed(4)})" title="El grupo va en ${Math.floor(b.pct)}%"><span>🏎️</span><small>${Math.floor(b.pct)}%</small></div>
+            <div class="ruta__car" style="left:calc(var(--w) / 2 + (100% - var(--w)) * ${(carX / 100).toFixed(4)})" title="El grupo lleva ${fmtV(b.total)}"><span>🏎️</span><small>${b.copias}/${b.n}</small></div>
             ${paradas.map((h, i) => {
-              const on = b.pct >= h.pct, esSig = sig && sig.pct === h.pct;
-              const falta = esSig ? fmtV(h.pct / 100 * b.metaGrupo - b.total) : '';
+              const on = h.inicio || b.copias >= h.k, esSig = sig && sig.k === h.k;
+              const falta = esSig ? fmtV(h.objetivo - b.total) : '';
               return `
-              <article class="parada ${on ? 'parada--on' : ''} ${esSig ? 'parada--next' : ''} ${h.inicio ? 'parada--inicio' : ''}" data-i="${i}" data-pct="${h.pct}">
-                <div class="parada__nodo"><span>${h.inicio ? '🏁' : on ? '✓' : h.pct + '%'}</span></div>
+              <article class="parada ${on ? 'parada--on' : ''} ${esSig ? 'parada--next' : ''} ${h.inicio ? 'parada--inicio' : ''}" data-i="${i}" data-k="${h.k}">
+                <div class="parada__nodo"><span>${h.inicio ? '🏁' : on ? '✓' : h.k}</span></div>
                 <div class="parada__card">
-                  <small class="parada__pct">${h.inicio ? 'Salida' : `Hito · ${h.pct}% de la bolsa`}</small>
+                  <small class="parada__pct">${h.inicio ? 'Salida' : h.todas ? `Copia ${h.k} · todas` : `Copia ${h.k} de ${b.n}`}</small>
                   <b>${esc(h.titulo)}</b>
                   <p>${esc(h.premio)}</p>
                   ${h.desbloquea ? `<em>${on ? '✨ Desbloqueado' : '🔒 Desbloquea'}: ${esc(h.desbloquea)}</em>` : ''}
-                  <span class="parada__estado">${h.inicio ? 'El grupo ya está en camino' : on ? '✅ Conseguido' : esSig ? `🎯 Siguiente · faltan <b>${falta}</b>` : '🔒 Más adelante'}</span>
+                  <span class="parada__estado">${h.inicio ? 'El grupo ya está en camino' : on ? '✅ Asegurada' : esSig ? `🎯 Siguiente · faltan <b>${falta}</b>` : `🔒 Necesita ${fmtV(h.objetivo)} en la bolsa`}</span>
                 </div>
               </article>`;
             }).join('')}
           </div>
         </div>
-        <div class="ruta__dots" role="tablist" aria-label="Paradas">${paradas.map((h, i) => `<button type="button" role="tab" class="ruta__dot ${b.pct >= h.pct ? 'ruta__dot--on' : ''}" data-i="${i}" aria-label="${esc(h.titulo)}"></button>`).join('')}</div>
+        <div class="ruta__dots" role="tablist" aria-label="Paradas">${paradas.map((h, i) => `<button type="button" role="tab" class="ruta__dot ${(h.inicio || b.copias >= h.k) ? 'ruta__dot--on' : ''}" data-i="${i}" aria-label="${esc(h.titulo)}"></button>`).join('')}</div>
       </div>`;
   }
+
   // Navegación de la ruta por delegación: los controles siguen funcionando
   // aunque el panel se vuelva a pintar (realtime, cambio de moneda, etc.).
   const RUTA = {
@@ -718,7 +738,7 @@
       if (dot) { RUTA.irA(Number(dot.dataset.i)); return; }
       const marca = e.target.closest('.marca[data-ir]');
       if (marca) {
-        const i = RUTA.paradas().findIndex((p) => Number(p.dataset.pct) === Number(marca.dataset.ir));
+        const i = RUTA.paradas().findIndex((p) => Number(p.dataset.k) === Number(marca.dataset.ir));
         if (i >= 0) RUTA.irA(i);
       }
     });
@@ -769,8 +789,9 @@
   }
 
   // Desbloqueos visuales según el hito alcanzado
-  function aplicarDesbloqueos(pct) {
-    const nivel = pct >= 100 ? 100 : pct >= 75 ? 75 : pct >= 50 ? 50 : pct >= 25 ? 25 : 0;
+  function aplicarDesbloqueos(b) {
+    const todas = b.copias >= b.n;
+    const nivel = todas ? 100 : b.copias >= 3 ? 75 : b.copias >= 2 ? 50 : b.copias >= 1 ? 25 : 0;
     document.body.dataset.hito = String(nivel);
     const img = $('.hero__bg img'), src = $('.hero__bg source');
     if (img && nivel >= 50 && !img.dataset.poster) { img.dataset.poster = '1'; img.src = 'assets/poster_full.jpg'; if (src) src.srcset = 'assets/trailer2.jpg'; }
@@ -873,7 +894,7 @@
             : 'Aún no hay alcancías. Sé el primero.';
           hb.addEventListener('click', (e) => { e.preventDefault(); const t = $('#bolsa'); t && t.scrollIntoView({ behavior: 'smooth' }); });
         }
-        aplicarDesbloqueos(lista.length ? bolsa.pct : 0);
+        aplicarDesbloqueos(lista.length ? bolsa : { copias: 0, n: 1 });
         $('#resumen').innerHTML = lista.length
           ? `<b>${lista.length}</b> ${plural(lista.length, 'alcancía', 'alcancías')} · <b>${fmtV(totalGrupo)}</b> ahorrados`
           : 'Aún no hay alcancías';
